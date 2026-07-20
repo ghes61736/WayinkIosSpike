@@ -7,6 +7,18 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
+# 明確宣告 scheme，不依賴 XcodeGen 的自動產生行為。
+# xcodebuild 的 -derivedDataPath 強制要求 -scheme，沒有 scheme 就無法建置。
+schemes:
+  WayinkLocationSpike:
+    build:
+      targets:
+        WayinkLocationSpike: all
+    run:
+      config: Release
+    archive:
+      config: Release
+
 targets:
   WayinkLocationSpike:
     type: application

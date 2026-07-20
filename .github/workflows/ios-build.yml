@@ -21,13 +21,17 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # 用 -target 而非 -scheme：不依賴 XcodeGen 是否產生共用 scheme，少一個失敗點。
+      # 建置前先把實際可用的 target/scheme 印出來。開發機沒有 Xcode，
+      # 這份輸出是失敗時唯一的現場證據，省掉一輪盲猜的 CI。
+      - name: List targets and schemes
+        run: xcodebuild -list -project WayinkLocationSpike.xcodeproj
+
       - name: Build (unsigned)
         run: |
           set -euo pipefail
           xcodebuild \
             -project WayinkLocationSpike.xcodeproj \
-            -target WayinkLocationSpike \
+            -scheme WayinkLocationSpike \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build/dd \
