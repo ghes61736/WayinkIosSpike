@@ -2,6 +2,10 @@ name: Build unsigned IPA
 
 on:
   push:
+    # private repo 的 macOS runner 吃 10 倍配額（Free 方案實際只剩約 200 分鐘），
+    # 純文件變更不該燒掉一次建置。
+    paths-ignore:
+      - "**.md"
   workflow_dispatch:
 
 jobs:
