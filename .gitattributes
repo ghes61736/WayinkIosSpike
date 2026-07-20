@@ -1,0 +1,3 @@
+# 開發機是 Windows、CI 是 macOS。workflow 的 shell 區塊若混進 CRLF，
+# 失敗訊息極難診斷，且每輪要等一趟 CI。一律以 LF 入庫與簽出。
+* text=auto eol=lf

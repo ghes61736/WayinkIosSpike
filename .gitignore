@@ -1,0 +1,10 @@
+# XcodeGen 產物
+*.xcodeproj/
+Support/Info.plist
+
+# 建置產物
+build/
+DerivedData/
+
+# macOS
+.DS_Store

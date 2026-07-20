@@ -1,0 +1,46 @@
+name: WayinkLocationSpike
+
+options:
+  bundleIdPrefix: com.wayink.spike
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+targets:
+  WayinkLocationSpike:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: Wayink Spike
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # 背景定位。依 Apple DTS 明文，UIBackgroundModes 是 Info.plist 屬性、
+        # 不是 entitlement，免費 Apple ID 亦可使用。
+        UIBackgroundModes:
+          - location
+        NSLocationWhenInUseUsageDescription: 用於記錄你的移動軌跡，驗證定位功能是否正常。
+        NSLocationAlwaysAndWhenInUseUsageDescription: 需要「永遠」權限才能在螢幕鎖定或切換到其他 App 時繼續記錄軌跡。這正是本次要驗證的項目。
+        # 下面兩個 key 缺一，Documents 目錄下的記錄檔在「檔案」App 裡完全看不見，
+        # 走完一小時回來會撈不到資料。
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.wayink.spike.location
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        # CI 上不簽名，產出 unsigned IPA 後交由 Sideloadly 重簽。
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO

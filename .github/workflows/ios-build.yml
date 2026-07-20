@@ -1,0 +1,65 @@
+name: Build unsigned IPA
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # 用 -target 而非 -scheme：不依賴 XcodeGen 是否產生共用 scheme，少一個失敗點。
+      - name: Build (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project WayinkLocationSpike.xcodeproj \
+            -target WayinkLocationSpike \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/dd \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/dd -type d -name '*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "找不到 .app，以下是產物目錄內容："
+            find build/dd -maxdepth 6 -name '*.app' -o -maxdepth 4 -type d | head -50
+            exit 1
+          fi
+          echo "使用 app: $APP_PATH"
+          # 確認 Info.plist 裡的背景定位設定真的被打包進去
+          plutil -p "$APP_PATH/Info.plist" | grep -A3 UIBackgroundModes || {
+            echo "警告：打包後的 Info.plist 找不到 UIBackgroundModes"
+            exit 1
+          }
+          # 不用 rm 清舊目錄（本專案禁止刪除指令）；runner 每次都是全新的，
+          # checkout 後 build/ 必不存在，mkdir -p 即可。
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          cd build
+          zip -qry WayinkLocationSpike.ipa Payload
+          ls -la WayinkLocationSpike.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WayinkLocationSpike-ipa
+          path: build/WayinkLocationSpike.ipa
+          if-no-files-found: error
