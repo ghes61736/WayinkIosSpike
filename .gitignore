@@ -6,5 +6,8 @@ Support/Info.plist
 build/
 DerivedData/
 
+# 從 CI 下載回來的 IPA
+dist/
+
 # macOS
 .DS_Store
