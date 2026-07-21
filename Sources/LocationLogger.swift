@@ -17,6 +17,25 @@ final class LocationLogger: NSObject, ObservableObject {
     @Published private(set) var isTracking: Bool = false
     @Published private(set) var lastErrorText: String?
 
+    /// 這次 process 是不是 iOS 因定位事件把 App 喚醒重啟的——「被系統殺掉後復活」的直接證據。
+    @Published private(set) var launchReasonText: String = "正常啟動"
+    /// App 從安裝以來被啟動過幾次（含系統復活）。跨 process 累加，存在 UserDefaults。
+    @Published private(set) var launchCount: Int = 0
+    /// significant location change 是否正在監聽——這是 App 被系統終止後唯一的復活途徑。
+    @Published private(set) var isMonitoringSignificantChanges: Bool = false
+
+    /// AppDelegate 在 `didFinishLaunching` 判讀完 launchOptions 後寫進來，本類別 init 讀走。
+    /// 用 static 傳遞，是因為 AppDelegate 的建立早於 ContentView 的 `@StateObject`，
+    /// 沒有其他管道能把「這次啟動是不是被定位喚醒」這件事交到 logger 手上。
+    static var pendingLaunchWokenByLocation = false
+
+    private enum Keys {
+        /// 使用者是否處於「追蹤中」。App 被殺後重啟時靠它決定要不要自動接續記錄。
+        static let trackingEnabled = "wayink.tracking.enabled"
+        /// App 累計啟動次數，用來讓「系統復活」在 UI 上可見（次數自己增加＝被重啟過）。
+        static let launchCount = "wayink.launch.count"
+    }
+
     /// 收到的座標序列,用來在地圖上畫軌跡。
     /// 註:每筆 append 都會觸發 SwiftUI 更新,長時間記錄下上千筆時效能會退化——
     /// 這一版先求正確、能看到軌跡,節流/抽稀留到之後優化。
@@ -56,13 +75,29 @@ final class LocationLogger: NSObject, ObservableObject {
 
         observeLifecycle()
         applyAuthorization(manager.authorizationStatus)
+
+        let defaults = UserDefaults.standard
+        launchCount = defaults.integer(forKey: Keys.launchCount) + 1
+        defaults.set(launchCount, forKey: Keys.launchCount)
+        launchReasonText = Self.pendingLaunchWokenByLocation ? "定位事件喚醒(系統復活)" : "正常啟動"
+
         append("APP_START modes=\(Self.backgroundModes.joined(separator: "|")) log=\(logURL.path)")
+        append("PROCESS_LAUNCH count=\(launchCount) reason=\(launchReasonText)")
+
+        // 復活的核心：上次若在追蹤中（旗標還在），這次啟動不論是使用者手開還是被系統喚醒，
+        // 都要自動接續記錄——被系統喚醒時沒有人會去按「開始記錄」，不自動接就等於復活了卻不記錄。
+        if defaults.bool(forKey: Keys.trackingEnabled) {
+            append("AUTO_RESUME 偵測到上次為追蹤中，嘗試自動恢復記錄")
+            resumeIfAuthorized()
+        }
     }
 
     // MARK: - 對外操作
 
     func start() {
         append("START_REQUESTED auth=\(describe(manager.authorizationStatus))")
+        // 記下「使用者要追蹤」。這個旗標是復活的依據：App 被殺後重啟時靠它決定要不要自動接續。
+        UserDefaults.standard.set(true, forKey: Keys.trackingEnabled)
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestAlwaysAuthorization()
@@ -70,6 +105,28 @@ final class LocationLogger: NSObject, ObservableObject {
             beginUpdates()
         default:
             append("START_BLOCKED 權限被拒或受限，無法開始")
+        }
+    }
+
+    /// 乾淨地停止並清除追蹤旗標。沒有這個，旗標一旦設為 true，之後每次啟動都會自動恢復，
+    /// 使用者就無法結束測試（會變成裝上去就永遠在背景記錄）。
+    func stop() {
+        UserDefaults.standard.set(false, forKey: Keys.trackingEnabled)
+        manager.stopUpdatingLocation()
+        manager.stopMonitoringSignificantLocationChanges()
+        isTracking = false
+        isMonitoringSignificantChanges = false
+        append("STOP_REQUESTED 已停止定位並清除自動恢復旗標")
+    }
+
+    /// App 重啟（含系統復活）時呼叫：已有權限就直接接續記錄，不需任何使用者互動。
+    /// 與 `start()` 的差別是它不改旗標、不主動請求權限——復活情境下權限本來就已授予過。
+    private func resumeIfAuthorized() {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            beginUpdates()
+        default:
+            append("AUTO_RESUME_BLOCKED 目前非授權狀態，無法自動恢復")
         }
     }
 
@@ -87,6 +144,18 @@ final class LocationLogger: NSObject, ObservableObject {
         }
 
         manager.startUpdatingLocation()
+
+        // significant location change：App 被系統終止（記憶體壓力）後，唯一能把它重新
+        // 喚醒到背景的機制。standard location updates 在 App 被殺後不會復活，只有這個會。
+        // 需要 Always 權限；WhenInUse 下註冊無效，故明確限定在 Always 分支。
+        if manager.authorizationStatus == .authorizedAlways {
+            manager.startMonitoringSignificantLocationChanges()
+            isMonitoringSignificantChanges = true
+            append("SLC_MONITORING_STARTED 已註冊顯著位置變化（App 被殺後靠此復活）")
+        } else {
+            append("SLC_MONITORING_SKIPPED 非 Always 權限，App 被殺後無法復活")
+        }
+
         isTracking = true
         append("UPDATES_STARTED")
     }

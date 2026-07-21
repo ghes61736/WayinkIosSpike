@@ -3,10 +3,26 @@ import UIKit
 
 @main
 struct WayinkSpikeApp: App {
+    // SwiftUI 的 App 生命週期拿不到 launchOptions，必須靠 UIKit 的 AppDelegate 才能判讀
+    // 「這次啟動是不是被定位事件喚醒的」——那是「系統復活」與「使用者手開」的唯一可靠訊號。
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
+    }
+}
+
+/// 唯一任務：在 App 完成啟動的那一刻讀 launchOptions，把「這次是不是被定位喚醒」記給 logger。
+/// `launchOptions[.location]` 有值，代表 App 是被系統因顯著位置變化重新喚醒的（先前已被殺）。
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        LocationLogger.pendingLaunchWokenByLocation = launchOptions?[.location] != nil
+        return true
     }
 }
 
@@ -27,6 +43,7 @@ struct ContentView: View {
 
                 mapCard
                 backgroundModeCard
+                relaunchCard
                 statusCard
                 controlCard
                 fileCard
@@ -86,6 +103,39 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 啟動與復活（背景定位最後一塊未驗拼圖）
+
+    private var relaunchCard: some View {
+        card("啟動與復活") {
+            let resurrected = logger.launchReasonText.contains("復活")
+            HStack(spacing: 4) {
+                Text("本次啟動：")
+                Text(logger.launchReasonText)
+                    .foregroundStyle(resurrected ? .orange : .primary)
+                    .bold()
+            }
+            .font(.callout)
+
+            Text("App 啟動次數（含系統復活）：\(logger.launchCount)")
+                .font(.callout)
+
+            Label(
+                logger.isMonitoringSignificantChanges
+                    ? "顯著位置變化監聽中（被殺後可復活）"
+                    : "尚未監聽顯著位置變化",
+                systemImage: logger.isMonitoringSignificantChanges ? "checkmark.circle.fill" : "circle"
+            )
+            .font(.caption)
+            .foregroundStyle(logger.isMonitoringSignificantChanges ? .green : .secondary)
+
+            Text("驗證復活：開始記錄後出門走一整天。iOS 可能因記憶體壓力把 App 殺掉，"
+                 + "若之後「啟動次數」自己增加、且本次啟動顯示「定位事件喚醒」，"
+                 + "就證明 App 被殺後靠顯著位置變化自動復活並接續記錄了。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - 即時狀態
 
     private var statusCard: some View {
@@ -120,6 +170,16 @@ struct ContentView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(logger.isTracking)
+
+            // 停止並清除自動恢復旗標。沒有它，裝上去就會永遠在背景記錄、無法乾淨結束測試。
+            Button(role: .destructive) {
+                logger.stop()
+            } label: {
+                Text("停止記錄")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!logger.isTracking)
 
             Text("iOS 不會第一次就給「永遠」權限。若權限顯示「使用App期間」，"
                  + "請到 設定 → 隱私權與安全性 → 定位服務 → Wayink Spike 手動改成「永遠」。")
