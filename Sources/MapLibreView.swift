@@ -13,22 +13,35 @@ struct MapLibreView: UIViewRepresentable {
 
     var coordinates: [CLLocationCoordinate2D]
 
+    /// 每次 +1 代表使用者按了「回到我的位置」。用遞增整數而非 Bool,是因為連按兩次
+    /// 都要能各自觸發一次重新跟隨——Bool 停在 true 時第二次按不會有變化。
+    var recenterToken: Int
+
     func makeUIView(context: Context) -> MLNMapView {
         let mapView = MLNMapView(frame: .zero)
         mapView.styleURL = Self.osmRasterStyleURL()
         mapView.showsUserLocation = true
         mapView.delegate = context.coordinator
-        // 先對準台灣;第一次收到座標時再移到使用者位置。
+        // 先給街道級 zoom 對準台灣;定位一到,userTrackingMode 會接管、把鏡頭移到使用者處
+        // 並持續跟隨(走路時地圖自動跟著移動,像導航)。用 .follow 不轉向,避免走路時地圖亂轉。
         mapView.setCenter(
             CLLocationCoordinate2D(latitude: 23.9, longitude: 121.0),
-            zoomLevel: 6.5,
+            zoomLevel: 16,
             animated: false
         )
+        mapView.userTrackingMode = .follow
         return mapView
     }
 
     func updateUIView(_ mapView: MLNMapView, context: Context) {
         context.coordinator.update(mapView: mapView, coordinates: coordinates)
+
+        // 使用者按了「回到我的位置」:重新進入跟隨模式。拖動地圖時 MapLibre 會自動把
+        // trackingMode 設回 .none,這個按鈕是唯一的復位入口。
+        if context.coordinator.lastRecenterToken != recenterToken {
+            context.coordinator.lastRecenterToken = recenterToken
+            mapView.setUserTrackingMode(.follow, animated: true)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -73,7 +86,9 @@ struct MapLibreView: UIViewRepresentable {
     final class Coordinator: NSObject, MLNMapViewDelegate {
 
         private var polyline: MLNPolyline?
-        private var hasCenteredOnUser = false
+        /// 最後一次處理過的 recenter token。置中/跟隨改由 userTrackingMode 負責,
+        /// 不再手動 setCenter。
+        var lastRecenterToken = 0
 
         func update(mapView: MLNMapView, coordinates: [CLLocationCoordinate2D]) {
             if let existing = polyline {
@@ -86,12 +101,6 @@ struct MapLibreView: UIViewRepresentable {
             let line = MLNPolyline(coordinates: &coords, count: UInt(coords.count))
             mapView.addAnnotation(line)
             polyline = line
-
-            // 第一次拿到座標時把鏡頭移到使用者處(只做一次,之後讓使用者自由平移)。
-            if !hasCenteredOnUser, let last = coordinates.last {
-                mapView.setCenter(last, zoomLevel: 16, animated: false)
-                hasCenteredOnUser = true
-            }
         }
 
         // 軌跡線樣式。Wayink 正式版的軌跡顏色由 AutoTrackColors 決定,這裡先用系統藍。

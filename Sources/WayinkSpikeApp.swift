@@ -16,6 +16,7 @@ struct WayinkSpikeApp: App {
 struct ContentView: View {
 
     @StateObject private var logger = LocationLogger()
+    @State private var recenterToken = 0
 
     var body: some View {
         ScrollView {
@@ -46,10 +47,22 @@ struct ContentView: View {
 
     private var mapCard: some View {
         card("地圖（MapLibre iOS，OSM 街道圖）") {
-            MapLibreView(coordinates: logger.coordinates)
-                .frame(height: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            Text("藍點是你的位置,藍線是走過的軌跡(要走動才畫得出來)。這是線上 OSM 街道圖,Wayink 的離線圖磚是下一步。")
+            ZStack(alignment: .bottomTrailing) {
+                MapLibreView(coordinates: logger.coordinates, recenterToken: recenterToken)
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                // 拖動地圖後,地圖會停止跟隨;按這個鈕拉回自己的位置並重新跟隨。
+                Button {
+                    recenterToken += 1
+                } label: {
+                    Image(systemName: "location.fill")
+                        .padding(10)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .padding(12)
+            }
+            Text("地圖會跟著你走動移動。拖走後按右下角定位鈕拉回來。藍線是走過的軌跡(要走動才畫得出來)。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
