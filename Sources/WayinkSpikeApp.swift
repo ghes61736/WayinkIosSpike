@@ -24,6 +24,7 @@ struct ContentView: View {
                     .font(.title2)
                     .bold()
 
+                mapCard
                 backgroundModeCard
                 statusCard
                 controlCard
@@ -38,6 +39,19 @@ struct ContentView: View {
                 }
             }
             .padding()
+        }
+    }
+
+    // MARK: - 地圖（驗證 MapLibre iOS 能否渲染）
+
+    private var mapCard: some View {
+        card("地圖（MapLibre iOS，線上底圖）") {
+            MapLibreView()
+                .frame(height: 260)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Text("看得到台灣地圖 = MapLibre 在 iOS 成功渲染。離線圖磚與軌跡疊加是下一步。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
