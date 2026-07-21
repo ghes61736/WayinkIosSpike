@@ -42,6 +42,9 @@ final class LocationLogger: NSObject, ObservableObject {
     @Published private(set) var coordinates: [CLLocationCoordinate2D] = []
 
     let logURL: URL
+    /// 走過的軌跡點另存一份純座標 CSV。App 被殺重啟（含系統復活）時讀回，
+    /// 讓地圖上仍看得到之前走過的線——否則復活後地圖是空的，看不出接續。
+    let trackURL: URL
 
     private let manager = CLLocationManager()
 
@@ -62,6 +65,7 @@ final class LocationLogger: NSObject, ObservableObject {
     override init() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         self.logURL = documents.appendingPathComponent("wayink-spike-log.txt")
+        self.trackURL = documents.appendingPathComponent("wayink-track.csv")
         super.init()
 
         manager.delegate = self
@@ -84,6 +88,9 @@ final class LocationLogger: NSObject, ObservableObject {
         append("APP_START modes=\(Self.backgroundModes.joined(separator: "|")) log=\(logURL.path)")
         append("PROCESS_LAUNCH count=\(launchCount) reason=\(launchReasonText)")
 
+        // 先把上次的軌跡讀回來，地圖一開就看得到（尤其是被系統殺掉又復活的情況）。
+        loadPersistedTrack()
+
         // 復活的核心：上次若在追蹤中（旗標還在），這次啟動不論是使用者手開還是被系統喚醒，
         // 都要自動接續記錄——被系統喚醒時沒有人會去按「開始記錄」，不自動接就等於復活了卻不記錄。
         if defaults.bool(forKey: Keys.trackingEnabled) {
@@ -98,6 +105,8 @@ final class LocationLogger: NSObject, ObservableObject {
         append("START_REQUESTED auth=\(describe(manager.authorizationStatus))")
         // 記下「使用者要追蹤」。這個旗標是復活的依據：App 被殺後重啟時靠它決定要不要自動接續。
         UserDefaults.standard.set(true, forKey: Keys.trackingEnabled)
+        // 手動開始＝全新一段，清掉上次殘留的軌跡（系統復活不走這裡，故會接續）。
+        resetTrack()
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestAlwaysAuthorization()
@@ -199,6 +208,49 @@ final class LocationLogger: NSObject, ObservableObject {
         handle.write(data)
     }
 
+    // MARK: - 軌跡持久化
+
+    /// 從 CSV 讀回歷史軌跡點，重建 `coordinates`。啟動時呼叫一次。
+    private func loadPersistedTrack() {
+        guard let text = try? String(contentsOf: trackURL, encoding: .utf8) else { return }
+        var restored: [CLLocationCoordinate2D] = []
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: ",")
+            guard parts.count >= 2,
+                  let lat = Double(parts[0]),
+                  let lon = Double(parts[1]) else { continue }
+            restored.append(CLLocationCoordinate2D(latitude: lat, longitude: lon))
+        }
+        guard !restored.isEmpty else { return }
+        coordinates = restored
+        append("TRACK_RESTORED points=\(restored.count) 已從持久化軌跡讀回")
+    }
+
+    /// 每收到一筆定位就把座標追加進 CSV。與 log 一樣每行獨立開關檔——App 隨時可能被殺，
+    /// 緩衝在記憶體裡的點會跟著消失，而「被殺前最後那段」正是復活要接續的地方。
+    /// 效能備註：一天上萬筆會頻繁開關檔，抽稀留待之後；這一版先求復活後軌跡不遺失。
+    private func appendTrackPoint(_ coordinate: CLLocationCoordinate2D) {
+        let line = String(format: "%.6f,%.6f\n", coordinate.latitude, coordinate.longitude)
+        guard let data = line.data(using: .utf8) else { return }
+
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: trackURL.path) {
+            fileManager.createFile(atPath: trackURL.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: trackURL) else { return }
+        defer { try? handle.close() }
+        handle.seekToEndOfFile()
+        handle.write(data)
+    }
+
+    /// 使用者手動「開始記錄」時清空舊軌跡，代表這是全新的一段。
+    /// 用覆寫成空字串、不刪檔（與本專案不刪除的慣例一致）。系統復活不走這裡，故會接續舊軌跡。
+    private func resetTrack() {
+        coordinates = []
+        try? "".write(to: trackURL, atomically: true, encoding: .utf8)
+        append("TRACK_RESET 開始新的一段記錄，已清空舊軌跡")
+    }
+
     private func appStateText() -> String {
         switch UIApplication.shared.applicationState {
         case .active: return "前景"
@@ -243,6 +295,7 @@ extension LocationLogger: CLLocationManagerDelegate {
             fixCount += 1
             lastFixAt = Date()
             coordinates.append(location.coordinate)
+            appendTrackPoint(location.coordinate)
             lastCoordinateText = String(
                 format: "%.5f, %.5f",
                 location.coordinate.latitude,
