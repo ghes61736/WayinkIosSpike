@@ -17,6 +17,11 @@ final class LocationLogger: NSObject, ObservableObject {
     @Published private(set) var isTracking: Bool = false
     @Published private(set) var lastErrorText: String?
 
+    /// 收到的座標序列,用來在地圖上畫軌跡。
+    /// 註:每筆 append 都會觸發 SwiftUI 更新,長時間記錄下上千筆時效能會退化——
+    /// 這一版先求正確、能看到軌跡,節流/抽稀留到之後優化。
+    @Published private(set) var coordinates: [CLLocationCoordinate2D] = []
+
     let logURL: URL
 
     private let manager = CLLocationManager()
@@ -168,6 +173,7 @@ extension LocationLogger: CLLocationManagerDelegate {
         for location in locations {
             fixCount += 1
             lastFixAt = Date()
+            coordinates.append(location.coordinate)
             lastCoordinateText = String(
                 format: "%.5f, %.5f",
                 location.coordinate.latitude,

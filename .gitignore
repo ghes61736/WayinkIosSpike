@@ -6,8 +6,12 @@ Support/Info.plist
 build/
 DerivedData/
 
-# 從 CI 下載回來的 IPA
+# 從 CI 下載回來的 IPA、解開的 app bundle
 dist/
+dist_map*/
+
+# 實機測試撈回來的定位記錄檔(測試產物,非程式碼)
+log/
 
 # macOS
 .DS_Store

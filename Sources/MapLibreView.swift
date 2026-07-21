@@ -2,21 +2,23 @@ import SwiftUI
 import CoreLocation
 import MapLibre
 
-/// MapLibre 地圖的 SwiftUI 包裝。
+/// MapLibre 地圖的 SwiftUI 包裝:顯示線上底圖、把記錄到的軌跡畫成線、顯示使用者藍點。
 ///
-/// 這一版**刻意只顯示線上地圖、不畫軌跡**：目的是單獨驗證「MapLibre 這個第三方依賴
-/// 能不能透過 SPM 在無 Mac 的純 CI 環境裝起來並編譯」。這是整條路第一個、也最可能卡的坎。
-/// 若這一版 build 過,就證明 SPM 整合成立;軌跡 polyline 的 API 用法留到下一輪再加,
-/// 免得「裝不起來」和「API 寫錯」兩種失敗混在一起分不清。
-///
-/// 底圖用 MapLibre 官方 demo tiles(線上)。Wayink 真正用的離線 pmtiles 是後面的事——
+/// 底圖仍用 MapLibre 官方 demo tiles(線上)。Wayink 真正用的離線 pmtiles 是後面的事——
 /// 6.27.0 起 MapLibre iOS 原生支援 PMTiles source,屆時再接。
+///
+/// 效能備註:`updateUIView` 每次座標更新都會移除並重畫整條 polyline,長時間記錄(上千筆)
+/// 下會退化。這一版先求「看得到軌跡」,節流/抽稀留到之後。
 struct MapLibreView: UIViewRepresentable {
+
+    var coordinates: [CLLocationCoordinate2D]
 
     func makeUIView(context: Context) -> MLNMapView {
         let mapView = MLNMapView(frame: .zero)
         mapView.styleURL = URL(string: "https://demotiles.maplibre.org/style.json")
-        // 先對準台灣,方便一眼看出地圖有沒有渲染出來。
+        mapView.showsUserLocation = true
+        mapView.delegate = context.coordinator
+        // 先對準台灣;第一次收到座標時再移到使用者位置。
         mapView.setCenter(
             CLLocationCoordinate2D(latitude: 23.9, longitude: 121.0),
             zoomLevel: 6.5,
@@ -25,7 +27,51 @@ struct MapLibreView: UIViewRepresentable {
         return mapView
     }
 
-    func updateUIView(_ uiView: MLNMapView, context: Context) {
-        // 尚無動態內容;軌跡疊加下一輪加。
+    func updateUIView(_ mapView: MLNMapView, context: Context) {
+        context.coordinator.update(mapView: mapView, coordinates: coordinates)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject, MLNMapViewDelegate {
+
+        private var polyline: MLNPolyline?
+        private var hasCenteredOnUser = false
+
+        func update(mapView: MLNMapView, coordinates: [CLLocationCoordinate2D]) {
+            if let existing = polyline {
+                mapView.removeAnnotation(existing)
+                polyline = nil
+            }
+            guard coordinates.count >= 2 else { return }
+
+            var coords = coordinates
+            let line = MLNPolyline(coordinates: &coords, count: UInt(coords.count))
+            mapView.addAnnotation(line)
+            polyline = line
+
+            // 第一次拿到座標時把鏡頭移到使用者處(只做一次,之後讓使用者自由平移)。
+            if !hasCenteredOnUser, let last = coordinates.last {
+                mapView.setCenter(last, zoomLevel: 16, animated: false)
+                hasCenteredOnUser = true
+            }
+        }
+
+        // 軌跡線樣式。Wayink 正式版的軌跡顏色由 AutoTrackColors 決定,這裡先用系統藍。
+        func mapView(
+            _ mapView: MLNMapView,
+            strokeColorForShapeAnnotation annotation: MLNShape
+        ) -> UIColor {
+            UIColor.systemBlue
+        }
+
+        func mapView(
+            _ mapView: MLNMapView,
+            lineWidthForPolylineAnnotation annotation: MLNPolyline
+        ) -> CGFloat {
+            4.0
+        }
     }
 }

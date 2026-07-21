@@ -46,10 +46,10 @@ struct ContentView: View {
 
     private var mapCard: some View {
         card("地圖（MapLibre iOS，線上底圖）") {
-            MapLibreView()
-                .frame(height: 260)
+            MapLibreView(coordinates: logger.coordinates)
+                .frame(height: 300)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            Text("看得到台灣地圖 = MapLibre 在 iOS 成功渲染。離線圖磚與軌跡疊加是下一步。")
+            Text("藍點是你的位置,藍線是走過的軌跡。看得到地圖 = MapLibre 在 iOS 渲染成功。離線圖磚是下一步。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
