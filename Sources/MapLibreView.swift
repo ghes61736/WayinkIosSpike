@@ -15,7 +15,7 @@ struct MapLibreView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MLNMapView {
         let mapView = MLNMapView(frame: .zero)
-        mapView.styleURL = URL(string: "https://demotiles.maplibre.org/style.json")
+        mapView.styleURL = Self.osmRasterStyleURL()
         mapView.showsUserLocation = true
         mapView.delegate = context.coordinator
         // 先對準台灣;第一次收到座標時再移到使用者位置。
@@ -33,6 +33,41 @@ struct MapLibreView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
+    }
+
+    /// 產生一個指向 OSM 街道圖磚的 raster style,寫進暫存檔後回傳 file URL。
+    ///
+    /// 前一版用 MapLibre 官方 demotiles,但它只有低倍率的世界輪廓,拉到街道級(zoom 16)
+    /// 就沒有圖磚、只剩背景色——看起來像「地圖沒渲染」,其實是圖源沒資料。改用 OSM raster
+    /// 後全 zoom 都有街道細節,能真正確認渲染管線與軌跡疊加。
+    ///
+    /// ⚠️ OSM 官方 tile server 有使用政策,**僅供這個 spike 測試**,正式版不可直接用;
+    /// Wayink 真正要接的是自己的離線 pmtiles(6.27 起 MapLibre iOS 原生支援)。
+    private static func osmRasterStyleURL() -> URL? {
+        let styleJSON = """
+        {
+          "version": 8,
+          "sources": {
+            "osm": {
+              "type": "raster",
+              "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+              "tileSize": 256,
+              "attribution": "© OpenStreetMap contributors"
+            }
+          },
+          "layers": [
+            { "id": "osm", "type": "raster", "source": "osm" }
+          ]
+        }
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("osm-raster-style.json")
+        do {
+            try styleJSON.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
     }
 
     final class Coordinator: NSObject, MLNMapViewDelegate {

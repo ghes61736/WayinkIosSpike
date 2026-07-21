@@ -45,11 +45,11 @@ struct ContentView: View {
     // MARK: - 地圖（驗證 MapLibre iOS 能否渲染）
 
     private var mapCard: some View {
-        card("地圖（MapLibre iOS，線上底圖）") {
+        card("地圖（MapLibre iOS，OSM 街道圖）") {
             MapLibreView(coordinates: logger.coordinates)
                 .frame(height: 300)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            Text("藍點是你的位置,藍線是走過的軌跡。看得到地圖 = MapLibre 在 iOS 渲染成功。離線圖磚是下一步。")
+            Text("藍點是你的位置,藍線是走過的軌跡(要走動才畫得出來)。這是線上 OSM 街道圖,Wayink 的離線圖磚是下一步。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
