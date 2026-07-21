@@ -33,6 +33,7 @@ struct ContentView: View {
 
     @StateObject private var logger = LocationLogger()
     @State private var recenterToken = 0
+    @State private var baseMapStyle: BaseMapStyle = .osm
 
     var body: some View {
         ScrollView {
@@ -63,11 +64,23 @@ struct ContentView: View {
     // MARK: - 地圖（驗證 MapLibre iOS 能否渲染）
 
     private var mapCard: some View {
-        card("地圖（MapLibre iOS，OSM 街道圖）") {
+        card("地圖（MapLibre iOS）") {
+            // 底圖切換：OSM 街道 ／ PMTiles 影像。切到 PMTiles 是要驗證 iOS 能否讀 pmtiles source。
+            Picker("底圖", selection: $baseMapStyle) {
+                ForEach(BaseMapStyle.allCases) { style in
+                    Text(style.rawValue).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+
             ZStack(alignment: .bottomTrailing) {
-                MapLibreView(coordinates: logger.coordinates, recenterToken: recenterToken)
-                    .frame(height: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                MapLibreView(
+                    coordinates: logger.coordinates,
+                    recenterToken: recenterToken,
+                    style: baseMapStyle
+                )
+                .frame(height: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 // 拖動地圖後,地圖會停止跟隨;按這個鈕拉回自己的位置並重新跟隨。
                 Button {
@@ -80,6 +93,10 @@ struct ContentView: View {
                 .padding(12)
             }
             Text("地圖會跟著你走動移動。拖走後按右下角定位鈕拉回來。藍線是走過的軌跡(要走動才畫得出來)。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("切到「PMTiles 影像」＝驗證 MapLibre iOS 能否讀 pmtiles source（Wayink 離線底圖的技術前提）。"
+                 + "這版用官方遠端 demo pmtiles、需 wifi 就能測；本機離線大檔是下一步硬骨頭。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -9,6 +9,15 @@ import MapLibre
 ///
 /// 效能備註:`updateUIView` 每次座標更新都會移除並重畫整條 polyline,長時間記錄(上千筆)
 /// 下會退化。這一版先求「看得到軌跡」,節流/抽稀留到之後。
+/// 底圖來源。切到 `.pmtiles` 是為了驗證「MapLibre iOS 能不能讀 pmtiles source」——
+/// 那是 Wayink 離線底圖的技術前提（真正要接的是本機 taiwan.pmtiles）。這一步先用官方託管的
+/// 遠端 demo pmtiles，驗證「格式能被解析並渲染」;本機離線大檔＋塞進 App 是下一步硬骨頭。
+enum BaseMapStyle: String, CaseIterable, Identifiable {
+    case osm = "OSM 街道"
+    case pmtiles = "PMTiles 影像"
+    var id: String { rawValue }
+}
+
 struct MapLibreView: UIViewRepresentable {
 
     var coordinates: [CLLocationCoordinate2D]
@@ -17,9 +26,13 @@ struct MapLibreView: UIViewRepresentable {
     /// 都要能各自觸發一次重新跟隨——Bool 停在 true 時第二次按不會有變化。
     var recenterToken: Int
 
+    /// 目前選用的底圖。切換時 `updateUIView` 會 setStyle 重載。
+    var style: BaseMapStyle
+
     func makeUIView(context: Context) -> MLNMapView {
         let mapView = MLNMapView(frame: .zero)
-        mapView.styleURL = Self.osmRasterStyleURL()
+        mapView.styleURL = Self.styleURL(for: style)
+        context.coordinator.lastStyle = style
         mapView.showsUserLocation = true
         mapView.delegate = context.coordinator
         // 先給街道級 zoom 對準台灣;定位一到,userTrackingMode 會接管、把鏡頭移到使用者處
@@ -34,6 +47,15 @@ struct MapLibreView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MLNMapView, context: Context) {
+        // 底圖切換：只有真的換了才 setStyle，避免每次 recomposition 都重載。
+        // 軌跡 polyline 與使用者藍點是 annotation／mapView 屬性，不隨 style 走，切換後仍在。
+        if context.coordinator.lastStyle != style {
+            context.coordinator.lastStyle = style
+            if let url = Self.styleURL(for: style) {
+                mapView.styleURL = url
+            }
+        }
+
         context.coordinator.update(mapView: mapView, coordinates: coordinates)
 
         // 使用者按了「回到我的位置」:重新進入跟隨模式。拖動地圖時 MapLibre 會自動把
@@ -46,6 +68,19 @@ struct MapLibreView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
+    }
+
+    /// 依選用的底圖回傳對應的 style URL。
+    static func styleURL(for style: BaseMapStyle) -> URL? {
+        switch style {
+        case .osm:
+            return osmRasterStyleURL()
+        case .pmtiles:
+            // 官方託管、含真正 pmtiles:// source 的 demo style（terrain raster-dem + imagery raster）。
+            // MapLibre Native 內建支援 pmtiles://，不需程式碼註冊 protocol（與 MapLibre GL JS 不同，
+            // 那邊要手動 addProtocol）。這一步驗證的是「iOS 能否解析並渲染 pmtiles source」。
+            return URL(string: "https://demotiles.maplibre.org/pmtiles/raster/style-imagery.json")
+        }
     }
 
     /// 產生一個指向 OSM 街道圖磚的 raster style,寫進暫存檔後回傳 file URL。
@@ -89,6 +124,8 @@ struct MapLibreView: UIViewRepresentable {
         /// 最後一次處理過的 recenter token。置中/跟隨改由 userTrackingMode 負責,
         /// 不再手動 setCenter。
         var lastRecenterToken = 0
+        /// 最後一次套用的底圖，用來判斷是否需要 setStyle 重載。
+        var lastStyle: BaseMapStyle?
 
         func update(mapView: MLNMapView, coordinates: [CLLocationCoordinate2D]) {
             if let existing = polyline {
